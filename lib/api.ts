@@ -11,6 +11,10 @@ import type {
 // HoYoLAB APIのベースURL
 const HOYOLAB_API_BASE = 'https://bbs-api-os.hoyolab.com';
 
+// 認証不要のAPI（推奨）
+const ENKA_API_BASE = 'https://enka.network/api';
+const MIHOMO_API_BASE = 'https://api.mihomo.me';
+
 // 認証情報を取得
 export function getAuthCookies(): { ltuid: string; ltoken: string } | null {
   if (typeof window === 'undefined') return null;
@@ -48,6 +52,116 @@ function getServerRegion(uid: string): string {
     case '8': return 'os_asia';
     case '9': return 'os_cht';
     default: return 'os_asia';
+  }
+}
+
+/**
+ * Enka Network APIを使用して原神のプロフィールを取得（認証不要）
+ */
+export async function fetchGenshinProfileFromEnka(uid: string): Promise<GenshinProfile | null> {
+  try {
+    const response = await axios.get(`${ENKA_API_BASE}/uid/${uid}/`, {
+      headers: {
+        'User-Agent': 'HoYoverseStatsViewer/1.0',
+      },
+    });
+
+    if (!response.data || !response.data.playerInfo) {
+      return null;
+    }
+
+    const playerInfo = response.data.playerInfo;
+    const avatarInfoList = response.data.avatarInfoList || [];
+
+    // キャラクター情報を変換
+    const characters = avatarInfoList.slice(0, 8).map((avatar: any) => {
+      const avatarId = avatar.avatarId;
+      const constellations = avatar.talentIdList?.length || 0;
+
+      return {
+        id: avatarId,
+        name: `Character ${avatarId}`, // 名前はマッピングが必要
+        element: 'Unknown',
+        rarity: 5,
+        level: avatar.propMap?.['4001']?.val || 1,
+        constellation: constellations,
+        icon: `https://enka.network/ui/UI_AvatarIcon_${avatarId}.png`,
+      };
+    });
+
+    return {
+      uid,
+      nickname: playerInfo.nickname || 'Traveler',
+      level: playerInfo.level || 0,
+      server: getServerRegion(uid),
+      signature: playerInfo.signature || '',
+      achievements: playerInfo.finishAchievementNum || 0,
+      characters,
+      activeDays: 0, // Enka APIには含まれない
+      spiralAbyss: playerInfo.towerFloorIndex ? `${playerInfo.towerFloorIndex}-${playerInfo.towerLevelIndex || 0}` : '-',
+      worldLevel: playerInfo.worldLevel || 0,
+    };
+  } catch (error: any) {
+    if (error.response?.status === 424) {
+      console.warn('Genshin profile is not public or showcase is empty');
+    } else {
+      console.error('Error fetching Genshin profile from Enka:', error);
+    }
+    return null;
+  }
+}
+
+/**
+ * mihomo.me APIを使用して崩壊スターレイルのプロフィールを取得（認証不要）
+ */
+export async function fetchStarRailProfileFromMihomo(uid: string): Promise<StarRailProfile | null> {
+  try {
+    const response = await axios.get(`${MIHOMO_API_BASE}/sr_info_parsed/${uid}`, {
+      params: {
+        lang: 'jp',
+      },
+      headers: {
+        'User-Agent': 'HoYoverseStatsViewer/1.0',
+      },
+    });
+
+    if (!response.data || !response.data.player) {
+      return null;
+    }
+
+    const player = response.data.player;
+    const characters = response.data.characters || [];
+
+    // キャラクター情報を変換
+    const characterList = characters.slice(0, 8).map((char: any) => ({
+      id: parseInt(char.id),
+      name: char.name,
+      element: char.element?.name || 'Unknown',
+      rarity: char.rarity,
+      level: char.level,
+      eidolon: char.rank || 0,
+      icon: `https://raw.githubusercontent.com/Mar-7th/StarRailRes/master/${char.icon}`,
+    }));
+
+    return {
+      uid,
+      nickname: player.nickname || 'Trailblazer',
+      level: player.level || 0,
+      server: getServerRegion(uid),
+      signature: player.signature || '',
+      achievements: response.data.player_details?.achievements || 0,
+      characters: characterList,
+      activeDays: 0, // mihomo APIには含まれない
+      memoryOfChaos: response.data.player_details?.memory_of_chaos || '-',
+      equilibriumLevel: player.equilibrium_level || 0,
+    };
+  } catch (error: any) {
+    if (error.response?.status === 404) {
+      console.warn('Star Rail profile not found or not public');
+    } else {
+      console.error('Error fetching Star Rail profile from mihomo:', error);
+    }
+    return null;
   }
 }
 
@@ -335,14 +449,26 @@ export async function fetchZZZProfile(uid: string): Promise<ZZZProfile | null> {
 
 /**
  * すべてのゲームのプロフィール情報を一括取得
+ * 認証不要のAPIを優先的に使用し、失敗した場合は認証付きAPIにフォールバック
  */
 export async function fetchAllProfiles(uid: string): Promise<HoyoverseData> {
-  const [genshin, starrail, honkai, zzz] = await Promise.all([
-    fetchGenshinProfile(uid),
-    fetchStarRailProfile(uid),
-    fetchHonkaiProfile(uid),
-    fetchZZZProfile(uid),
+  // 認証不要のAPIを優先的に使用
+  const [genshin, starrail] = await Promise.all([
+    fetchGenshinProfileFromEnka(uid),
+    fetchStarRailProfileFromMihomo(uid),
   ]);
+
+  // 崩壊3rdとZZZは認証が必要（認証不要のAPIが存在しない）
+  const auth = getAuthCookies();
+  let honkai = null;
+  let zzz = null;
+
+  if (auth) {
+    [honkai, zzz] = await Promise.all([
+      fetchHonkaiProfile(uid),
+      fetchZZZProfile(uid),
+    ]);
+  }
 
   return {
     genshin: genshin || undefined,

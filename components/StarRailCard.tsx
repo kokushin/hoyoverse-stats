@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { StarRailProfile } from '@/types';
 import GameCard from './GameCard';
 
@@ -48,18 +49,24 @@ export default function StarRailCard({ profile }: StarRailCardProps) {
 
         <div className="pt-4">
           <p className="text-gray-400 text-sm mb-3">所持キャラクター ({profile.characters.length})</p>
-          <div className="grid grid-cols-2 gap-2">
-            {profile.characters.slice(0, 6).map((char) => (
-              <div key={char.id} className="bg-gray-700 rounded-lg p-3">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className="text-white font-semibold">{char.name}</p>
-                    <p className="text-gray-400 text-xs">{char.element}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-yellow-300 font-semibold">Lv.{char.level}</p>
-                    <p className="text-yellow-400 text-xs">星魂{char.eidolon}</p>
-                  </div>
+          <div className="grid grid-cols-4 gap-3">
+            {profile.characters.slice(0, 8).map((char) => (
+              <div key={char.id} className="bg-gray-700 rounded-lg p-2 flex flex-col items-center">
+                <div className="relative w-16 h-16 mb-2">
+                  <Image
+                    src={char.icon || '/placeholder-character.png'}
+                    alt={char.name}
+                    fill
+                    className="rounded-full object-cover"
+                    unoptimized
+                  />
+                </div>
+                <p className="text-white text-xs font-semibold text-center truncate w-full">
+                  {char.name}
+                </p>
+                <div className="flex justify-between w-full mt-1">
+                  <span className="text-yellow-300 text-xs">Lv.{char.level}</span>
+                  <span className="text-yellow-400 text-xs">E{char.eidolon}</span>
                 </div>
               </div>
             ))}

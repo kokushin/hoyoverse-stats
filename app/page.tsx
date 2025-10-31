@@ -28,13 +28,6 @@ export default function Home() {
   }, []);
 
   const handleSubmit = async (uid: string) => {
-    // 認証チェック
-    if (!isAuthenticated) {
-      setError('HoYoLAB認証が必要です。右上の設定ボタンから認証情報を入力してください。');
-      setIsAuthModalOpen(true);
-      return;
-    }
-
     setLoading(true);
     setError(null);
     setData(null);
@@ -44,12 +37,17 @@ export default function Home() {
 
       // データが1つも取得できなかった場合
       if (!result.genshin && !result.starrail && !result.honkai && !result.zzz) {
-        setError('プロフィールデータを取得できませんでした。UIDまたは認証情報を確認してください。');
+        setError('プロフィールデータを取得できませんでした。UIDを確認するか、ゲーム内でプロフィールを公開設定にしてください。');
       } else {
         setData(result);
+
+        // 崩壊3rdとZZZが取得できない場合は認証を促す
+        if (!result.honkai && !result.zzz && isAuthenticated === false) {
+          setError(null); // エラーをクリア（原神・スターレイルは取得できているため）
+        }
       }
     } catch (err) {
-      setError('データの取得中にエラーが発生しました。認証情報が正しいか確認してください。');
+      setError('データの取得中にエラーが発生しました。しばらく待ってから再試行してください。');
       console.error(err);
     } finally {
       setLoading(false);
@@ -122,11 +120,19 @@ export default function Home() {
         {!data && !loading && !error && (
           <div className="text-center text-gray-400 py-20">
             <p className="text-xl">UIDを入力してプロフィールを表示</p>
-            {!isAuthenticated && (
-              <p className="text-sm mt-4 text-yellow-400">
-                まず右上の「認証設定」ボタンからHoYoLAB認証情報を入力してください
+            <div className="mt-6 max-w-2xl mx-auto text-sm space-y-2">
+              <p className="text-green-400">
+                ✓ 原神・崩壊スターレイルは認証不要でデータ取得可能
               </p>
-            )}
+              {!isAuthenticated && (
+                <p className="text-yellow-400">
+                  ※ 崩壊3rd・ゼンレスゾーンゼロのデータを表示するには、右上の「認証設定」から認証情報を入力してください
+                </p>
+              )}
+              <p className="text-gray-500 text-xs mt-4">
+                プロフィールがゲーム内で公開設定になっている必要があります
+              </p>
+            </div>
           </div>
         )}
       </div>

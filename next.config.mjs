@@ -11,6 +11,18 @@ const nextConfig = {
         protocol: 'https',
         hostname: '**.mihoyo.com',
       },
+      {
+        protocol: 'https',
+        hostname: 'enka.network',
+      },
+      {
+        protocol: 'https',
+        hostname: 'raw.githubusercontent.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'api.mihomo.me',
+      },
     ],
   },
 };
