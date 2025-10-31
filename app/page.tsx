@@ -1,23 +1,40 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { Cog6ToothIcon } from '@heroicons/react/24/outline';
 import UIDForm from '@/components/UIDForm';
 import GenshinCard from '@/components/GenshinCard';
 import StarRailCard from '@/components/StarRailCard';
 import HonkaiCard from '@/components/HonkaiCard';
 import ZZZCard from '@/components/ZZZCard';
 import ExportButton from '@/components/ExportButton';
+import AuthModal from '@/components/AuthModal';
 import Footer from '@/components/Footer';
-import { fetchAllProfiles } from '@/lib/api';
+import { fetchAllProfiles, getAuthCookies, setAuthCookies } from '@/lib/api';
 import type { HoyoverseData } from '@/types';
 
 export default function Home() {
   const [data, setData] = useState<HoyoverseData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
 
+  // 認証状態を確認
+  useEffect(() => {
+    const auth = getAuthCookies();
+    setIsAuthenticated(!!auth);
+  }, []);
+
   const handleSubmit = async (uid: string) => {
+    // 認証チェック
+    if (!isAuthenticated) {
+      setError('HoYoLAB認証が必要です。右上の設定ボタンから認証情報を入力してください。');
+      setIsAuthModalOpen(true);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setData(null);
@@ -27,21 +44,42 @@ export default function Home() {
 
       // データが1つも取得できなかった場合
       if (!result.genshin && !result.starrail && !result.honkai && !result.zzz) {
-        setError('プロフィールデータを取得できませんでした。UIDを確認してください。');
+        setError('プロフィールデータを取得できませんでした。UIDまたは認証情報を確認してください。');
       } else {
         setData(result);
       }
     } catch (err) {
-      setError('データの取得中にエラーが発生しました。');
+      setError('データの取得中にエラーが発生しました。認証情報が正しいか確認してください。');
       console.error(err);
     } finally {
       setLoading(false);
     }
   };
 
+  const handleAuthSave = (ltuid: string, ltoken: string) => {
+    setAuthCookies(ltuid, ltoken);
+    setIsAuthenticated(true);
+    setError(null);
+  };
+
   return (
     <div className="min-h-screen bg-gray-900">
       <div className="max-w-7xl mx-auto px-4 py-8">
+        {/* 設定ボタン */}
+        <div className="flex justify-end mb-4">
+          <button
+            onClick={() => setIsAuthModalOpen(true)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+              isAuthenticated
+                ? 'bg-green-900/30 border border-green-500 text-green-300 hover:bg-green-900/50'
+                : 'bg-gray-800 border border-gray-700 text-gray-300 hover:bg-gray-700'
+            }`}
+          >
+            <Cog6ToothIcon className="w-5 h-5" />
+            {isAuthenticated ? '認証済み' : '認証設定'}
+          </button>
+        </div>
+
         <header className="text-center mb-12">
           <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500 text-transparent bg-clip-text mb-4">
             HoYoverse Stats Viewer
@@ -84,9 +122,21 @@ export default function Home() {
         {!data && !loading && !error && (
           <div className="text-center text-gray-400 py-20">
             <p className="text-xl">UIDを入力してプロフィールを表示</p>
+            {!isAuthenticated && (
+              <p className="text-sm mt-4 text-yellow-400">
+                まず右上の「認証設定」ボタンからHoYoLAB認証情報を入力してください
+              </p>
+            )}
           </div>
         )}
       </div>
+
+      {/* 認証モーダル */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onSave={handleAuthSave}
+      />
 
       <Footer />
     </div>

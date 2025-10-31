@@ -11,54 +11,125 @@ import type {
 // HoYoLAB APIのベースURL
 const HOYOLAB_API_BASE = 'https://bbs-api-os.hoyolab.com';
 
-// 注意: 実際の実装では適切なAPIエンドポイントとトークンが必要です
-// これはデモ用のモック実装を含みます
+// 認証情報を取得
+export function getAuthCookies(): { ltuid: string; ltoken: string } | null {
+  if (typeof window === 'undefined') return null;
+
+  const ltuid = localStorage.getItem('hoyolab_ltuid');
+  const ltoken = localStorage.getItem('hoyolab_ltoken');
+
+  if (!ltuid || !ltoken) return null;
+
+  return { ltuid, ltoken };
+}
+
+// 認証情報を保存
+export function setAuthCookies(ltuid: string, ltoken: string): void {
+  if (typeof window === 'undefined') return;
+
+  localStorage.setItem('hoyolab_ltuid', ltuid);
+  localStorage.setItem('hoyolab_ltoken', ltoken);
+}
+
+// 認証情報をクリア
+export function clearAuthCookies(): void {
+  if (typeof window === 'undefined') return;
+
+  localStorage.removeItem('hoyolab_ltuid');
+  localStorage.removeItem('hoyolab_ltoken');
+}
+
+// サーバー地域を判定（UIDの最初の数字から）
+function getServerRegion(uid: string): string {
+  const firstDigit = uid.charAt(0);
+  switch (firstDigit) {
+    case '6': return 'os_usa';
+    case '7': return 'os_euro';
+    case '8': return 'os_asia';
+    case '9': return 'os_cht';
+    default: return 'os_asia';
+  }
+}
 
 /**
  * 原神のプロフィール情報を取得
  */
 export async function fetchGenshinProfile(uid: string): Promise<GenshinProfile | null> {
   try {
-    // 実際のAPI呼び出し例（要認証トークン）
-    // const response = await axios.get<ApiResponse<GenshinProfile>>(
-    //   `${HOYOLAB_API_BASE}/game_record/genshin/api/index`,
-    //   {
-    //     params: { role_id: uid, server: 'os_asia' },
-    //     headers: { 'x-rpc-app_version': '1.5.0' }
-    //   }
-    // );
+    const auth = getAuthCookies();
+    if (!auth) {
+      console.warn('認証情報が設定されていません');
+      return null;
+    }
 
-    // デモ用のモックデータ
+    const server = getServerRegion(uid);
+
+    // プロフィール基本情報を取得
+    const response = await axios.get(
+      `${HOYOLAB_API_BASE}/game_record/genshin/api/index`,
+      {
+        params: {
+          role_id: uid,
+          server: server,
+        },
+        headers: {
+          'Cookie': `ltuid=${auth.ltuid}; ltoken=${auth.ltoken}`,
+          'x-rpc-app_version': '1.5.0',
+          'x-rpc-client_type': '5',
+          'x-rpc-language': 'ja-jp',
+        },
+      }
+    );
+
+    if (response.data.retcode !== 0) {
+      console.error('Genshin API error:', response.data.message);
+      return null;
+    }
+
+    const data = response.data.data;
+    const stats = data.stats;
+
+    // キャラクター情報を取得
+    const charactersResponse = await axios.post(
+      `${HOYOLAB_API_BASE}/game_record/genshin/api/character`,
+      {
+        role_id: uid,
+        server: server,
+      },
+      {
+        headers: {
+          'Cookie': `ltuid=${auth.ltuid}; ltoken=${auth.ltoken}`,
+          'x-rpc-app_version': '1.5.0',
+          'x-rpc-client_type': '5',
+          'x-rpc-language': 'ja-jp',
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    const characters = charactersResponse.data.retcode === 0
+      ? charactersResponse.data.data.avatars.slice(0, 8).map((char: any) => ({
+          id: char.id,
+          name: char.name,
+          element: char.element,
+          rarity: char.rarity,
+          level: char.level,
+          constellation: char.actived_constellation_num,
+          icon: char.icon,
+        }))
+      : [];
+
     return {
       uid,
-      nickname: 'Traveler',
-      level: 60,
-      server: 'Asia',
-      signature: '世界を旅する者',
-      achievements: 850,
-      characters: [
-        {
-          id: 1,
-          name: '雷電将軍',
-          element: 'Electro',
-          rarity: 5,
-          level: 90,
-          constellation: 2,
-          icon: '',
-        },
-        {
-          id: 2,
-          name: '胡桃',
-          element: 'Pyro',
-          rarity: 5,
-          level: 90,
-          constellation: 1,
-          icon: '',
-        },
-      ],
-      activeDays: 850,
-      spiralAbyss: '12-3',
-      worldLevel: 8,
+      nickname: data.role.nickname,
+      level: data.role.level,
+      server: server,
+      signature: data.role.game_head_icon || '',
+      achievements: stats.achievement_number || 0,
+      characters,
+      activeDays: stats.active_day_number || 0,
+      spiralAbyss: stats.spiral_abyss || '-',
+      worldLevel: data.world_level || 0,
     };
   } catch (error) {
     console.error('Error fetching Genshin profile:', error);
@@ -71,37 +142,78 @@ export async function fetchGenshinProfile(uid: string): Promise<GenshinProfile |
  */
 export async function fetchStarRailProfile(uid: string): Promise<StarRailProfile | null> {
   try {
-    // デモ用のモックデータ
+    const auth = getAuthCookies();
+    if (!auth) {
+      console.warn('認証情報が設定されていません');
+      return null;
+    }
+
+    const server = getServerRegion(uid);
+
+    const response = await axios.get(
+      `${HOYOLAB_API_BASE}/game_record/hkrpg/api/index`,
+      {
+        params: {
+          role_id: uid,
+          server: server,
+        },
+        headers: {
+          'Cookie': `ltuid=${auth.ltuid}; ltoken=${auth.ltoken}`,
+          'x-rpc-app_version': '1.5.0',
+          'x-rpc-client_type': '5',
+          'x-rpc-language': 'ja-jp',
+        },
+      }
+    );
+
+    if (response.data.retcode !== 0) {
+      console.error('Star Rail API error:', response.data.message);
+      return null;
+    }
+
+    const data = response.data.data;
+    const stats = data.stats;
+
+    // キャラクター情報を取得
+    const charactersResponse = await axios.get(
+      `${HOYOLAB_API_BASE}/game_record/hkrpg/api/avatar/info`,
+      {
+        params: {
+          role_id: uid,
+          server: server,
+        },
+        headers: {
+          'Cookie': `ltuid=${auth.ltuid}; ltoken=${auth.ltoken}`,
+          'x-rpc-app_version': '1.5.0',
+          'x-rpc-client_type': '5',
+          'x-rpc-language': 'ja-jp',
+        },
+      }
+    );
+
+    const characters = charactersResponse.data.retcode === 0
+      ? charactersResponse.data.data.avatar_list.slice(0, 8).map((char: any) => ({
+          id: char.id,
+          name: char.name,
+          element: char.element,
+          rarity: char.rarity,
+          level: char.level,
+          eidolon: char.rank,
+          icon: char.icon,
+        }))
+      : [];
+
     return {
       uid,
-      nickname: 'Trailblazer',
-      level: 70,
-      server: 'Asia',
-      signature: '星の海を旅する者',
-      achievements: 650,
-      characters: [
-        {
-          id: 1,
-          name: '景元',
-          element: 'Lightning',
-          rarity: 5,
-          level: 80,
-          eidolon: 1,
-          icon: '',
-        },
-        {
-          id: 2,
-          name: '銀狼',
-          element: 'Quantum',
-          rarity: 5,
-          level: 80,
-          eidolon: 0,
-          icon: '',
-        },
-      ],
-      activeDays: 320,
-      memoryOfChaos: 'Stage 10',
-      equilibriumLevel: 6,
+      nickname: data.role?.nickname || 'Trailblazer',
+      level: data.role?.level || 0,
+      server: server,
+      signature: data.role?.game_head_icon || '',
+      achievements: stats?.achievement_num || 0,
+      characters,
+      activeDays: stats?.active_days || 0,
+      memoryOfChaos: stats?.abyss_process || '-',
+      equilibriumLevel: data.role?.world_level || 0,
     };
   } catch (error) {
     console.error('Error fetching Star Rail profile:', error);
@@ -111,40 +223,53 @@ export async function fetchStarRailProfile(uid: string): Promise<StarRailProfile
 
 /**
  * 崩壊3rdのプロフィール情報を取得
+ * 注意: Honkai Impact 3rdのAPIは地域によって異なる場合があります
  */
 export async function fetchHonkaiProfile(uid: string): Promise<HonkaiProfile | null> {
   try {
-    // デモ用のモックデータ
+    const auth = getAuthCookies();
+    if (!auth) {
+      console.warn('認証情報が設定されていません');
+      return null;
+    }
+
+    const server = getServerRegion(uid);
+
+    const response = await axios.get(
+      `${HOYOLAB_API_BASE}/game_record/honkai3rd/api/index`,
+      {
+        params: {
+          role_id: uid,
+          server: server,
+        },
+        headers: {
+          'Cookie': `ltuid=${auth.ltuid}; ltoken=${auth.ltoken}`,
+          'x-rpc-app_version': '1.5.0',
+          'x-rpc-client_type': '5',
+          'x-rpc-language': 'ja-jp',
+        },
+      }
+    );
+
+    if (response.data.retcode !== 0) {
+      console.error('Honkai 3rd API error:', response.data.message);
+      return null;
+    }
+
+    const data = response.data.data;
+    const stats = data.stats;
+
     return {
       uid,
-      nickname: 'Captain',
-      level: 88,
-      server: 'Asia',
-      signature: '崩壊と戦う戦士',
-      achievements: 1200,
-      valkyries: [
-        {
-          id: 1,
-          name: '空の律者',
-          type: 'Mech',
-          rarity: 5,
-          level: 80,
-          rank: 'SSS',
-          icon: '',
-        },
-        {
-          id: 2,
-          name: '黄金の旋風',
-          type: 'Bio',
-          rarity: 5,
-          level: 80,
-          rank: 'SS',
-          icon: '',
-        },
-      ],
-      activeDays: 1450,
-      memorial: 'RL Agony III',
-      captainLevel: 88,
+      nickname: data.role?.nickname || 'Captain',
+      level: data.role?.level || 0,
+      server: server,
+      signature: data.role?.game_head_icon || '',
+      achievements: stats?.achievement_num || 0,
+      valkyries: [], // バルキリー情報は別のエンドポイントが必要
+      activeDays: stats?.active_days || 0,
+      memorial: stats?.memorial_arena || '-',
+      captainLevel: data.role?.level || 0,
     };
   } catch (error) {
     console.error('Error fetching Honkai profile:', error);
@@ -154,40 +279,53 @@ export async function fetchHonkaiProfile(uid: string): Promise<HonkaiProfile | n
 
 /**
  * ゼンレスゾーンゼロのプロフィール情報を取得
+ * 注意: ZZZのAPIは比較的新しく、エンドポイントが変更される可能性があります
  */
 export async function fetchZZZProfile(uid: string): Promise<ZZZProfile | null> {
   try {
-    // デモ用のモックデータ
+    const auth = getAuthCookies();
+    if (!auth) {
+      console.warn('認証情報が設定されていません');
+      return null;
+    }
+
+    const server = getServerRegion(uid);
+
+    const response = await axios.get(
+      `${HOYOLAB_API_BASE}/game_record/zzz/api/index`,
+      {
+        params: {
+          role_id: uid,
+          server: server,
+        },
+        headers: {
+          'Cookie': `ltuid=${auth.ltuid}; ltoken=${auth.ltoken}`,
+          'x-rpc-app_version': '1.5.0',
+          'x-rpc-client_type': '5',
+          'x-rpc-language': 'ja-jp',
+        },
+      }
+    );
+
+    if (response.data.retcode !== 0) {
+      console.error('ZZZ API error:', response.data.message);
+      return null;
+    }
+
+    const data = response.data.data;
+    const stats = data.stats;
+
     return {
       uid,
-      nickname: 'Proxy',
-      level: 50,
-      server: 'Asia',
-      signature: 'ゼロ番街のエージェント',
-      achievements: 420,
-      agents: [
-        {
-          id: 1,
-          name: 'エレン',
-          attribute: 'Ice',
-          rarity: 5,
-          level: 60,
-          mindscapeLevel: 0,
-          icon: '',
-        },
-        {
-          id: 2,
-          name: 'ジュ・ユアン',
-          attribute: 'Physical',
-          rarity: 5,
-          level: 60,
-          mindscapeLevel: 1,
-          icon: '',
-        },
-      ],
-      activeDays: 120,
-      shiyu: 'Floor 10',
-      interKnotLevel: 50,
+      nickname: data.role?.nickname || 'Proxy',
+      level: data.role?.level || 0,
+      server: server,
+      signature: data.role?.game_head_icon || '',
+      achievements: stats?.achievement_count || 0,
+      agents: [], // エージェント情報は別のエンドポイントが必要
+      activeDays: stats?.active_days || 0,
+      shiyu: stats?.shiyu_defense || '-',
+      interKnotLevel: data.role?.level || 0,
     };
   } catch (error) {
     console.error('Error fetching ZZZ profile:', error);
